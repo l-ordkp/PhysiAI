@@ -1,0 +1,7 @@
+google-generativeai
+numpy
+pillow
+python-dotenv
+faiss-cpu
+langchain
+transformers
