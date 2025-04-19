@@ -1,106 +1,125 @@
 import os
 import json
+from dotenv import load_dotenv
 from llamaparse_processor import LlamaParseProcessor
 from chunk_processor import TextChunkProcessor, TableChunkProcessor
 from generate_questions import QuestionGenerator
 from vector_db import VectorDBManager
 from image_extractor import ImageExtractor
-from dotenv import load_dotenv
-load_dotenv()
-llama_key = os.environ.get("LLAMA_CLOUD_API_KEY")
 
-def process_single_pdf(pdf_path, output_dir, llamaparse_api_key, gemini_api_key):
-    """Process a single PDF and prepare it for RAG"""
-    
-    # Create output directories
+# Limit threads to avoid memory spikes
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
+load_dotenv()
+llama_key = os.getenv("LLAMA_CLOUD_API_KEY")
+
+def process_single_pdf(pdf_path, base_output_dir, llamaparse_api_key, gemini_api_key):
+    pdf_file = os.path.basename(pdf_path)
+    pdf_name = os.path.splitext(pdf_file)[0]
+    output_dir = os.path.join(base_output_dir, pdf_name)
+
     os.makedirs(output_dir, exist_ok=True)
     image_dir = os.path.join(output_dir, "images")
     os.makedirs(image_dir, exist_ok=True)
-    
+
     # Initialize components
     llamaparse_processor = LlamaParseProcessor(
         result_type="markdown",
         skip_diagonal_text=True,
         fast_mode=False,
-        num_workers=9,
+        num_workers=2,
         check_interval=10,
         api_key=llamaparse_api_key
     )
-    
+
     text_processor = TextChunkProcessor(chunk_size=500, overlap=50)
     table_processor = TableChunkProcessor()
     question_generator = QuestionGenerator(api_key=gemini_api_key)
     image_extractor = ImageExtractor(image_dir)
-    
-    # PDF filename for metadata
-    pdf_file = os.path.basename(pdf_path)
-    
-    # Process the PDF
+
     print(f"Parsing PDF: {pdf_file}")
     json_objs = llamaparse_processor.get_json_result(pdf_path)
-    
-    # Process text and tables
-    all_chunks = []
-    all_questions = []
-    all_metadata = []
-    
-    print("Processing content...")
+
+    # Step 1: Extract markdown text and tables into dicts
+    page_texts, tables = {}, {}
+
     for obj in json_objs:
         json_list = obj['pages']
-        for page_data in json_list:
-            page_num = page_data['page']
-            
-            # Process text
-            if 'md' in page_data:
-                chunks, questions, metadata = text_processor.process(
-                    page_data['md'], 
-                    pdf_file, 
-                    page_num,
-                    question_generator
-                )
-                all_chunks.extend(chunks)
-                all_questions.extend(questions)
-                all_metadata.extend(metadata)
-            
-            # Process tables
-            for item in page_data.get('items', []):
-                if item['type'] == 'table' and 'rows' in item:
-                    chunk, question, metadata = table_processor.process(
-                        item['rows'], 
-                        pdf_file, 
-                        page_num,
-                        question_generator
-                    )
-                    all_chunks.append(chunk)
-                    all_questions.append(question)
-                    all_metadata.append(metadata)
-            
-            # Extract images
-            image_extractor.extract_images_from_page(page_data, pdf_file, page_num)
-    
-    # Create vector database
+        print(json_list)
+        name = obj["file_path"].split("/")[-1]
+
+        page_texts[name] = {}
+        tables[name] = {}
+
+        for json_item in json_list:
+            page_num = json_item['page']
+
+            if 'md' in json_item:
+                page_texts[name][page_num] = json_item['md']
+
+            for component in json_item.get('items', []):
+                if component['type'] == 'table':
+                    tables[name][page_num] = component['rows']
+
+            # Extract images while we're looping pages
+            image_extractor.extract_images_from_page(json_item, name, page_num)
+
+    all_chunks, all_questions, all_metadata = [], [], []
+
+    # Step 2: Process extracted markdown text
+    for name in page_texts:
+        for page_num, md_text in page_texts[name].items():
+            chunks, questions, metadata = text_processor.process(
+                md_text,
+                name,
+                page_num,
+                question_generator
+            )
+            all_chunks.extend(chunks)
+            all_questions.extend(questions)
+            all_metadata.extend(metadata)
+
+    # Step 3: Process extracted tables
+    for name in tables:
+        for page_num, rows in tables[name].items():
+            chunk, question, metadata = table_processor.process(
+                rows,
+                name,
+                page_num,
+                question_generator
+            )
+            all_chunks.append(chunk)
+            all_questions.append(question)
+            all_metadata.append(metadata)
+
+    print(f"Total Chunks: {len(all_chunks)}")
+
+    # Step 4: Build and save FAISS DB
     print("Creating vector database...")
     vector_db = VectorDBManager('all-MiniLM-L6-v2')
-    vector_db.create_index(all_questions, all_chunks, all_metadata)
+    vector_db.create_index(all_questions, all_chunks, all_metadata, batch_size=32)
     vector_db.save_index(os.path.join(output_dir, "faiss_index.idx"))
-    
-    # Save metadata and content
-    with open(os.path.join(output_dir, "metadata.json"), "w") as f:
-        json.dump(all_metadata, f)
-    
-    with open(os.path.join(output_dir, "questions.json"), "w") as f:
-        json.dump(all_questions, f)
-    
-    with open(os.path.join(output_dir, "chunks.json"), "w") as f:
-        json.dump(all_chunks, f)
-    
-    print(f"Processing complete.")
-    print(f"- Total chunks: {len(all_chunks)}")
-    print(f"- Text chunks: {len([m for m in all_metadata if m['type'] == 'text'])}")
-    print(f"- Table chunks: {len([m for m in all_metadata if m['type'] == 'table'])}")
-    print(f"- Images saved: {len(os.listdir(image_dir))}")
+    vector_db.save_data(os.path.join(output_dir, "vector_data.pkl"))
+
+    # Step 5: Save summary
+    summary = {
+        "total_chunks": len(all_chunks),
+        "text_chunks": len([m for m in all_metadata if m['type'] == 'text']),
+        "table_chunks": len([m for m in all_metadata if m['type'] == 'table']),
+        "image_count": len(os.listdir(image_dir))
+    }
+
+    with open(os.path.join(output_dir, "summary.json"), "w") as f:
+        json.dump(summary, f, indent=2)
+
+    print("Processing complete.")
+    print(json.dumps(summary, indent=2))
     print(f"- Data saved to: {output_dir}")
-    
+
     return {
         "vector_db": vector_db,
         "metadata": all_metadata,
@@ -109,13 +128,10 @@ def process_single_pdf(pdf_path, output_dir, llamaparse_api_key, gemini_api_key)
     }
 
 if __name__ == "__main__":
-    llamaparse_api_key = os.environ.get("LLAMA_CLOUD_API_KEY")
-    gemini_api_key = os.getenv('GOOGLE_API_KEY')
-    # Configuration
-    pdf_path = "C:\\Users\\Kshit\\Desktop\\PhysiAI\\string.pdf"
+    llamaparse_api_key = os.getenv("LLAMA_CLOUD_API_KEY")
+    gemini_api_key = os.getenv("GOOGLE_API_KEY")
+
+    pdf_path = "einaudi.pdf"
     output_dir = "text_db"
-   
-    # Process the PDF
+
     result = process_single_pdf(pdf_path, output_dir, llamaparse_api_key, gemini_api_key)
-    
-    

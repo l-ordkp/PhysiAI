@@ -1,86 +1,59 @@
 import faiss
 import numpy as np
+import pickle
 from sentence_transformers import SentenceTransformer
 
 class VectorDBManager:
     def __init__(self, model_name='all-MiniLM-L6-v2'):
-        """
-        Initialize vector database manager.
-        
-        Args:
-            model_name (str): Model name for sentence transformer
-        """
         self.model = SentenceTransformer(model_name)
         self.index = None
         self.chunks = []
         self.metadata = []
         self.questions = []
-    
-    def create_index(self, questions, chunks, metadata):
-        """
-        Create FAISS index from questions.
-        
-        Args:
-            questions (list): List of questions
-            chunks (list): List of chunks
-            metadata (list): List of metadata
-        """
+
+    def create_index(self, questions, chunks, metadata, batch_size=32):
         self.chunks = chunks
         self.metadata = metadata
         self.questions = questions
-        
-        # Generate embeddings
-        embeddings = self.model.encode(questions)
-        
-        # Normalize embeddings (required for cosine similarity)
+
+        embeddings = self.model.encode(questions, batch_size=batch_size, convert_to_numpy=True).astype(np.float32)
         faiss.normalize_L2(embeddings)
-        
-        # Create index
+
         dimension = embeddings.shape[1]
-        self.index = faiss.IndexFlatIP(dimension)  # Inner product for cosine similarity
+        self.index = faiss.IndexFlatIP(dimension)
         self.index.add(embeddings)
-    
+
     def save_index(self, path):
-        """
-        Save FAISS index to file.
-        
-        Args:
-            path (str): Path to save the index
-        """
         if self.index is not None:
             faiss.write_index(self.index, path)
-    
+
     def load_index(self, path):
-        """
-        Load FAISS index from file.
-        
-        Args:
-            path (str): Path to load the index from
-        """
         self.index = faiss.read_index(path)
-    
+
+    def save_data(self, path):
+        with open(path, "wb") as f:
+            pickle.dump({
+                "chunks": self.chunks,
+                "metadata": self.metadata,
+                "questions": self.questions
+            }, f)
+
+    def load_data(self, path):
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+            self.chunks = data["chunks"]
+            self.metadata = data["metadata"]
+            self.questions = data["questions"]
+
     def query(self, query_text, top_k=3):
-        """
-        Query the vector database.
-        
-        Args:
-            query_text (str): Query text
-            top_k (int): Number of results to return
-            
-        Returns:
-            list: Top k results with chunks and metadata
-        """
         if self.index is None:
             raise ValueError("Index not created or loaded")
-        
-        # Encode the query
-        query_vector = self.model.encode([query_text])
+
+        query_vector = self.model.encode([query_text], convert_to_numpy=True).astype(np.float32)
         faiss.normalize_L2(query_vector)
-        
-        # Search the index
+
         distances, indices = self.index.search(query_vector, top_k)
-        
-        # Get the matching chunks and their metadata
+
         results = []
         for idx, distance in zip(indices[0], distances[0]):
             results.append({
@@ -89,5 +62,5 @@ class VectorDBManager:
                 'question': self.questions[idx],
                 'score': float(distance)
             })
-        
+
         return results
