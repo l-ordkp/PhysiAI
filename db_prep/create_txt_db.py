@@ -1,18 +1,11 @@
 import os
 import json
 from dotenv import load_dotenv
-from llamaparse_processor import LlamaParseProcessor
-from chunk_processor import TextChunkProcessor, TableChunkProcessor
-from generate_questions import QuestionGenerator
-from vector_db import VectorDBManager
-from image_extractor import ImageExtractor
-
-# Limit threads to avoid memory spikes
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
+from utils.llamaparse_processor import LlamaParseProcessor
+from utils.chunk_processor import TextChunkProcessor, TableChunkProcessor
+from utils.generate_questions import QuestionGenerator
+from db_prep.vector_db import VectorDBManager
+from utils.image_extractor import ImageExtractor
 
 load_dotenv()
 llama_key = os.getenv("LLAMA_CLOUD_API_KEY")
@@ -31,7 +24,7 @@ def process_single_pdf(pdf_path, base_output_dir, llamaparse_api_key, gemini_api
         result_type="markdown",
         skip_diagonal_text=True,
         fast_mode=False,
-        num_workers=2,
+        num_workers=9,
         check_interval=10,
         api_key=llamaparse_api_key
     )
@@ -42,7 +35,8 @@ def process_single_pdf(pdf_path, base_output_dir, llamaparse_api_key, gemini_api
     image_extractor = ImageExtractor(image_dir)
 
     print(f"Parsing PDF: {pdf_file}")
-    json_objs = llamaparse_processor.get_json_result(pdf_path)
+    json_objs = []
+    json_objs.extend(llamaparse_processor.get_json_result(pdf_path))
 
     # Step 1: Extract markdown text and tables into dicts
     page_texts, tables = {}, {}
