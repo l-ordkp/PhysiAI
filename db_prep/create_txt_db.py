@@ -125,7 +125,7 @@ if __name__ == "__main__":
     llamaparse_api_key = os.getenv("LLAMA_CLOUD_API_KEY")
     gemini_api_key = os.getenv("GOOGLE_API_KEY")
 
-    pdf_path = "einaudi.pdf"
+    pdf_path = "iesc111.pdf"  # Path to your PDF file
     output_dir = "text_db"
 
     result = process_single_pdf(pdf_path, output_dir, llamaparse_api_key, gemini_api_key)
