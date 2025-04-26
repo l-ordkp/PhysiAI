@@ -23,7 +23,7 @@ def process_pdf(pdf_path: str) -> None:
     # Step 2: Generate questions for each chunk
     chunks_with_questions = []
     print("Generating questions for each chunk...")
-    for idx, chunk in enumerate(chunks):
+    for chunk in enumerate(chunks):
         questions = question_generator.generate_questions(chunk)
         chunk_with_questions = chunk.copy()
         chunk_with_questions["questions"] = questions

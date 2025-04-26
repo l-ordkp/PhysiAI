@@ -31,84 +31,75 @@ class VectorStore:
     
     def store_chunks_with_questions(self, chunks_with_questions: List[Dict[str, Any]]):
         """
-        Store chunks with their questions in Pinecone
+        Store question-only embeddings with chunk metadata in Pinecone.
         Args:
             chunks_with_questions (List[Dict]): Content chunks with generated questions
         """
         vectors = []
-        
+
         for chunk_data in chunks_with_questions:
             chunk_id = chunk_data["chunk_id"]
             questions = chunk_data["questions"]
-            
-            # Compute embeddings for each question
+
             for q_idx, question in enumerate(questions):
-                # Get embedding vector for the question
                 embedding = self.embedder.get_embedding(question)
-                
-                # Create a unique ID for this question
                 vector_id = f"{chunk_id}_q{q_idx+1}"
-                
-                # Store the chunk as metadata
+
                 metadata = {
                     "chunk_id": chunk_id,
-                    "content": chunk_data["content"],
+                    "content": chunk_data["content"],  # stored only as metadata
                     "content_type": chunk_data["content_type"],
                     "page": chunk_data["page"],
                     "question": question,
                     "question_idx": q_idx
                 }
-                
-                # Add HTML if it's a table
+
                 if chunk_data["content_type"] == "table" and "html" in chunk_data:
                     metadata["html"] = chunk_data["html"]
-                
-                vectors.append((vector_id, embedding, metadata))
-                
-        # Upsert vectors in batches (Pinecone has limits on batch size)
+
+                vectors.append({
+                    "id": vector_id,
+                    "values": embedding,
+                    "metadata": metadata
+                })
+
+        # Upsert in batches
         batch_size = 100
         for i in range(0, len(vectors), batch_size):
             batch = vectors[i:i+batch_size]
             self.index.upsert(vectors=batch)
-            
+
         print(f"Stored {len(vectors)} question vectors in Pinecone.")
-    
-    def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
+
+    def retrieve_content_from_query(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         """
-        Search for relevant chunks based on query similarity to questions
+        Retrieve relevant content chunks based on the user query.
+        
         Args:
-            query (str): Search query
-            top_k (int): Number of results to return
+            query (str): User's natural language question.
+            top_k (int): Number of top results to return.
+
         Returns:
-            List[Dict]: Search results
+            List[Dict]: Retrieved metadata chunks corresponding to relevant questions.
         """
-        # Get embedding for the query
+        # Step 1: Embed the user query
         query_embedding = self.embedder.get_embedding(query)
-        
-        # Search in Pinecone
-        results = self.index.query(
-            vector=query_embedding,
-            top_k=top_k,
-            include_metadata=True
-        )
-        
-        # Extract and format the results
-        formatted_results = []
-        seen_chunks = set()  # To avoid duplicate chunks
-        
-        for match in results["matches"]:
-            chunk_id = match["metadata"]["chunk_id"]
-            if chunk_id not in seen_chunks:
-                seen_chunks.add(chunk_id)
-                
-                formatted_results.append({
-                    "score": match["score"],
-                    "chunk_id": chunk_id,
-                    "content": match["metadata"]["content"],
-                    "content_type": match["metadata"]["content_type"],
-                    "page": match["metadata"]["page"],
-                    "matched_question": match["metadata"]["question"],
-                    "html": match["metadata"].get("html")  # Include HTML for tables if available
-                })
-                
-        return formatted_results
+
+        # Step 2: Query Pinecone for similar questions
+        try:
+            response = self.index.query(
+                vector=query_embedding,
+                top_k=top_k,
+                include_metadata=True
+            )
+        except Exception as e:
+            print(f"Error during Pinecone query: {e}")
+            return []
+
+        # Step 3: Extract only the 'content' from metadata
+        relevant_contents = [
+            match.metadata.get("content", "") 
+            for match in response.matches if "content" in match.metadata
+        ]
+
+        return relevant_contents
