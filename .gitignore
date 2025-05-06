@@ -2,4 +2,6 @@
 venv/
 __pycache__/
 img_db/
-text_db
+text_db/
+credentials.json/
+token.pickle/

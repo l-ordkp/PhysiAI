@@ -1,5 +1,5 @@
 import os
-from langchain_groq import ChatGroq
+from utils.llm import llm
 from typing import TypedDict, List, Dict, Any
 from dotenv import load_dotenv
 load_dotenv()
@@ -17,4 +17,4 @@ class AgentState(TypedDict):
     groundedness_check: bool  # Indicator for groundedness check
     loop_max_iter: int  # Maximum iterations for loops
 
-llm = ChatGroq(temperature=0,model_name="qwen-qwq-32b",api_key=os.getenv("GROQ_API_KEY"))
+llm = llm

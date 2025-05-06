@@ -26,3 +26,4 @@ def run_agent(user_input: str):
     img_path = retrieve_image(user_input)
     answer = f'The answer to your question is: {final_state["response"]}. The best image suitable for your question is: {img_path}.'
     return answer
+
