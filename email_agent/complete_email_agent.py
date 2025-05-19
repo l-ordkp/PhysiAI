@@ -1,7 +1,7 @@
 from email_agent.agent_state import AgentState
 from email_agent.create_workflow import create_workflow
 
-def email_agent(user_input: str):
+def complete_mail_agent(user_input: str):
     # Step 1: Build the workflow
     graph = create_workflow()
 

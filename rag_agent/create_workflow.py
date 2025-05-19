@@ -38,7 +38,7 @@ def create_workflow() -> StateGraph:
         should_continue_groundedness,  # Use the conditional function
         {
             "check_precision": "check_precision",  # If well-grounded, proceed to precision check.
-            "refine_response": "refine_response",  # If not, refine the response.
+            "refine_query": "refine_query",  # If not, refine the response.
             "max_iterations_reached": "max_iterations_reached"  # If max loops reached, exit.
         }
     )
@@ -50,7 +50,7 @@ def create_workflow() -> StateGraph:
         should_continue_precision,  # Use the conditional function
         {
             "pass": END,              # If precise, complete the workflow.
-            "refine_query": "refine_query",  # If imprecise, refine the query.
+            "refine_response": "refine_response",  # If imprecise, refine the query.
             "max_iterations_reached": "max_iterations_reached"  # If max loops reached, exit.
         }
     )

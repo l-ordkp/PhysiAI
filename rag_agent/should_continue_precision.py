@@ -9,5 +9,5 @@ def should_continue_precision(state: Dict) -> str:
         if state['precision_loop_count'] >= state['loop_max_iter']:  # Maximum allowed loops
             return "max_iterations_reached"
         else:
-            print(f"---------Precision Score Threshold Not met. Refining Query-----------")  # Debugging
-            return "refine_query" # Refine the query
+            print(f"---------Precision Score Threshold Not met. Refining Response-----------")  # Debugging
+            return "refine_response" # Refine the query

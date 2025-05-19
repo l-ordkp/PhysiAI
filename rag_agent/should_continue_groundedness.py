@@ -9,5 +9,5 @@ def should_continue_groundedness(state):
       if state["groundedness_loop_count"] > state['loop_max_iter']:
         return "max_iterations_reached"
       else:
-        print(f"---------Groundedness Score Threshold Not met. Refining Response-----------")
-        return "refine_response"
+        print(f"---------Groundedness Score Threshold Not met. Refining Query-----------")
+        return "refine_query"

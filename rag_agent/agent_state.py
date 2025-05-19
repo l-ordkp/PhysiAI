@@ -17,4 +17,3 @@ class AgentState(TypedDict):
     groundedness_check: bool  # Indicator for groundedness check
     loop_max_iter: int  # Maximum iterations for loops
 
-llm = llm

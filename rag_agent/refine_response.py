@@ -1,5 +1,5 @@
 from langchain.prompts import ChatPromptTemplate  
-from rag_agent.agent_state import llm
+from utils.llm import llm
 from langchain_core.output_parsers import StrOutputParser 
 from typing import Dict
 
