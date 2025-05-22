@@ -61,5 +61,7 @@ Acts as the top-level router, classifying user intent and dispatching to the cor
 ## How to Run
 
 ```bash
+git clone https://github.com/l-ordkp/PhysiAI.git
 pip install -r requirements.txt
-python main.py
+setup you environment
+uvicorn main:app --reload
